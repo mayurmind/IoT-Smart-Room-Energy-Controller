@@ -1,0 +1,1071 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Room Energy Controller</title>
+    <style>
+        /* CSS Variables & Theme Setup */
+        :root {
+            --bg-color: #0b0f19;
+            --card-bg: rgba(22, 30, 49, 0.6);
+            --card-border: rgba(255, 255, 255, 0.06);
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --color-temp: #f97316;
+            --color-humidity: #3b82f6;
+            --color-light: #eab308;
+            --color-motion: #ef4444;
+            --color-success: #10b981;
+            --color-danger: #f43f5e;
+            --color-ac: #06b6d4;
+            --accent-glow: rgba(59, 130, 246, 0.15);
+        }
+
+        /* Basic Reset & Typography */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(30, 58, 138, 0.3) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(17, 94, 89, 0.2) 0px, transparent 50%),
+                radial-gradient(at 50% 50%, rgba(88, 28, 135, 0.15) 0px, transparent 50%);
+            background-attachment: fixed;
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1100px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            padding: 10px 0;
+        }
+
+        /* Header Layout */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 24px;
+            background: rgba(15, 23, 42, 0.4);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+
+        .header-title h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #60a5fa, #34d399);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.5px;
+        }
+
+        .header-title p {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+
+        .status-indicators {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            background: rgba(30, 41, 59, 0.6);
+            border: 1px solid var(--card-border);
+            transition: all 0.3s ease;
+        }
+
+        .badge-ws.connected {
+            color: var(--color-success);
+            border-color: rgba(16, 185, 129, 0.3);
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.1);
+        }
+
+        .badge-ws.disconnected {
+            color: var(--color-danger);
+            border-color: rgba(244, 63, 94, 0.3);
+            box-shadow: 0 0 10px rgba(244, 63, 94, 0.1);
+        }
+
+        .badge-ws .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: currentColor;
+            display: inline-block;
+        }
+
+        .badge-ws.connected .dot {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.9); opacity: 0.6; }
+            50% { transform: scale(1.2); opacity: 1; box-shadow: 0 0 8px currentColor; }
+            100% { transform: scale(0.9); opacity: 0.6; }
+        }
+
+        /* Glassmorphic Grid Layout */
+        .grid-sensors {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 20px;
+        }
+
+        .grid-controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 20px;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 20px;
+            padding: 24px;
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            min-height: 150px;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 100%;
+            background: radial-gradient(circle at 10% 10%, rgba(255,255,255,0.03), transparent 60%);
+            pointer-events: none;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            border-color: rgba(255, 255, 255, 0.12);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+        }
+
+        /* Sensor Specific Card Styling */
+        .sensor-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 12px;
+        }
+
+        .sensor-title {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .sensor-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            transition: all 0.3s ease;
+        }
+
+        .sensor-value {
+            font-size: 2.25rem;
+            font-weight: 700;
+            letter-spacing: -1px;
+            margin-top: auto;
+            display: flex;
+            align-items: baseline;
+        }
+
+        .sensor-unit {
+            font-size: 1rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+            margin-left: 4px;
+        }
+
+        .sensor-footer {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-top: 8px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        /* Ambient Indicator Accents */
+        .card-temp:hover .sensor-icon {
+            color: var(--color-temp);
+            border-color: rgba(249, 115, 22, 0.3);
+            background: rgba(249, 115, 22, 0.08);
+            box-shadow: 0 0 12px rgba(249, 115, 22, 0.15);
+        }
+        .card-humidity:hover .sensor-icon {
+            color: var(--color-humidity);
+            border-color: rgba(59, 130, 246, 0.3);
+            background: rgba(59, 130, 246, 0.08);
+            box-shadow: 0 0 12px rgba(59, 130, 246, 0.15);
+        }
+        .card-light:hover .sensor-icon {
+            color: var(--color-light);
+            border-color: rgba(234, 179, 8, 0.3);
+            background: rgba(234, 179, 8, 0.08);
+            box-shadow: 0 0 12px rgba(234, 179, 8, 0.15);
+        }
+
+        /* Motion Card Custom Styles */
+        .card-motion {
+            transition: all 0.4s ease;
+        }
+        .card-motion.motion-detected {
+            border-color: rgba(239, 68, 68, 0.4);
+            background: radial-gradient(circle at 50% 50%, rgba(239, 68, 68, 0.08), rgba(22, 30, 49, 0.6));
+            box-shadow: 0 0 20px rgba(239, 68, 68, 0.15);
+        }
+        .card-motion.motion-detected .sensor-icon {
+            color: var(--color-motion);
+            border-color: rgba(239, 68, 68, 0.4);
+            background: rgba(239, 68, 68, 0.15);
+            animation: pulse-red 1.5s infinite;
+        }
+        .motion-status-text {
+            font-size: 1.5rem !important;
+            font-weight: 600 !important;
+        }
+
+        @keyframes pulse-red {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+
+        /* Control Dashboard Section */
+        .section-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .section-desc {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-top: -4px;
+            margin-bottom: 8px;
+        }
+
+        /* Mode Select Card Styling */
+        .card-mode {
+            min-height: 100px;
+            flex-direction: row;
+            align-items: center;
+            justify-content: space-between;
+            padding: 20px 24px;
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.7), rgba(15, 23, 42, 0.7));
+            border-color: rgba(255,255,255,0.08);
+        }
+
+        .mode-info h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        .mode-info p {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        /* Toggle Switches */
+        .switch-container {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 32px;
+        }
+
+        .switch-container input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(148, 163, 184, 0.2);
+            transition: .4s cubic-bezier(0.16, 1, 0.3, 1);
+            border-radius: 34px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 24px;
+            width: 24px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s cubic-bezier(0.16, 1, 0.3, 1);
+            border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        input:checked + .slider {
+            background-color: var(--color-humidity);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(28px);
+        }
+
+        /* Appliance Card Styling */
+        .card-control {
+            min-height: 180px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .control-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .control-details h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        .control-status {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-top: 2px;
+            font-weight: 500;
+        }
+
+        .control-action {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: auto;
+            padding-top: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        /* Appliance Active Glowing States */
+        .card-control.active {
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        .card-control.active-light {
+            background: linear-gradient(135deg, rgba(234, 179, 8, 0.05), rgba(22, 30, 49, 0.6));
+            border-color: rgba(234, 179, 8, 0.3);
+            box-shadow: 0 0 20px rgba(234, 179, 8, 0.06);
+        }
+        .card-control.active-light .sensor-icon {
+            color: var(--color-light);
+            border-color: rgba(234, 179, 8, 0.4);
+            background: rgba(234, 179, 8, 0.1);
+            box-shadow: 0 0 12px rgba(234, 179, 8, 0.2);
+        }
+        .card-control.active-light input:checked + .slider {
+            background-color: var(--color-light);
+        }
+
+        .card-control.active-fan {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.05), rgba(22, 30, 49, 0.6));
+            border-color: rgba(16, 185, 129, 0.3);
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.06);
+        }
+        .card-control.active-fan .sensor-icon {
+            color: var(--color-success);
+            border-color: rgba(16, 185, 129, 0.4);
+            background: rgba(16, 185, 129, 0.1);
+            box-shadow: 0 0 12px rgba(16, 185, 129, 0.2);
+        }
+        .card-control.active-fan .sensor-icon svg {
+            animation: spin 3s linear infinite;
+        }
+        .card-control.active-fan input:checked + .slider {
+            background-color: var(--color-success);
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .card-control.active-ac {
+            background: linear-gradient(135deg, rgba(6, 182, 212, 0.05), rgba(22, 30, 49, 0.6));
+            border-color: rgba(6, 182, 212, 0.3);
+            box-shadow: 0 0 20px rgba(6, 182, 212, 0.06);
+        }
+        .card-control.active-ac .sensor-icon {
+            color: var(--color-ac);
+            border-color: rgba(6, 182, 212, 0.4);
+            background: rgba(6, 182, 212, 0.1);
+            box-shadow: 0 0 12px rgba(6, 182, 212, 0.2);
+        }
+        .card-control.active-ac input:checked + .slider {
+            background-color: var(--color-ac);
+        }
+
+        /* Auto Mode Dim Overlay (Manual Controls Disabled) */
+        .controls-wrapper {
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .controls-wrapper.disabled {
+            opacity: 0.55;
+            pointer-events: none;
+            filter: grayscale(0.2);
+        }
+
+        .auto-mode-overlay-msg {
+            display: none;
+            text-align: center;
+            font-size: 0.85rem;
+            color: var(--color-humidity);
+            padding: 8px 12px;
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px dashed rgba(59, 130, 246, 0.2);
+            border-radius: 8px;
+            margin-top: -8px;
+            margin-bottom: 8px;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            animation: fadeIn 0.4s ease forwards;
+        }
+
+        .controls-wrapper.disabled + .auto-mode-overlay-msg {
+            display: flex;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Footer */
+        footer {
+            text-align: center;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            padding: 16px 0;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            margin-top: auto;
+        }
+
+        /* Responsiveness adjustments */
+        @media (max-width: 640px) {
+            body {
+                padding: 12px;
+            }
+            .container {
+                gap: 16px;
+            }
+            header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 12px;
+                padding: 16px;
+            }
+            .status-indicators {
+                width: 100%;
+                justify-content: space-between;
+            }
+            .sensor-value {
+                font-size: 1.85rem;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        
+        <!-- Header -->
+        <header>
+            <div class="header-title">
+                <h1>Smart Room</h1>
+                <p>ESP32 Controller Dashboard</p>
+            </div>
+            <div class="status-indicators">
+                <div class="badge badge-ws disconnected" id="connection-badge">
+                    <span class="dot"></span>
+                    <span id="connection-text">Disconnected</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Environmental Metrics Section -->
+        <section>
+            <div class="section-title">Sensors</div>
+            <div class="grid-sensors">
+                
+                <!-- Temperature -->
+                <div class="card card-temp" id="card-temp">
+                    <div class="sensor-header">
+                        <span class="sensor-title">Temperature</span>
+                        <div class="sensor-icon">
+                            <!-- Thermometer SVG -->
+                            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></svg>
+                        </div>
+                    </div>
+                    <div class="sensor-value">
+                        <span id="val-temp">--.-</span><span class="sensor-unit">°C</span>
+                    </div>
+                    <div class="sensor-footer">
+                        <span id="val-temp-f">--.-</span>°F
+                    </div>
+                </div>
+
+                <!-- Humidity -->
+                <div class="card card-humidity" id="card-humidity">
+                    <div class="sensor-header">
+                        <span class="sensor-title">Humidity</span>
+                        <div class="sensor-icon">
+                            <!-- Droplet SVG -->
+                            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a7 7 0 0 0 7-7c0-4.3-7-11-7-11S5 10.7 5 15a7 7 0 0 0 7 7Z"/></svg>
+                        </div>
+                    </div>
+                    <div class="sensor-value">
+                        <span id="val-humidity">--</span><span class="sensor-unit">%</span>
+                    </div>
+                    <div class="sensor-footer">
+                        <span id="val-humidity-desc">Normal humidity</span>
+                    </div>
+                </div>
+
+                <!-- Light level -->
+                <div class="card card-light" id="card-light">
+                    <div class="sensor-header">
+                        <span class="sensor-title">Ambient Light</span>
+                        <div class="sensor-icon">
+                            <!-- Sun/Light SVG -->
+                            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="M4.93 4.93l1.41 1.41"/><path d="M17.66 17.66l1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="M6.34 17.66l-1.41 1.41"/><path d="M19.07 4.93l-1.41 1.41"/></svg>
+                        </div>
+                    </div>
+                    <div class="sensor-value">
+                        <span id="val-light">---</span><span class="sensor-unit">lux</span>
+                    </div>
+                    <div class="sensor-footer">
+                        <span id="val-light-level">Indoor Reading</span>
+                    </div>
+                </div>
+
+                <!-- Motion sensor -->
+                <div class="card card-motion" id="card-motion">
+                    <div class="sensor-header">
+                        <span class="sensor-title">Motion Activity</span>
+                        <div class="sensor-icon">
+                            <!-- Shield/Radar SVG -->
+                            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                        </div>
+                    </div>
+                    <div class="sensor-value motion-status-text">
+                        <span id="val-motion">NO MOTION</span>
+                    </div>
+                    <div class="sensor-footer">
+                        <span>Last trigger:</span> <span id="val-motion-time">Never</span>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- System Mode Section (Auto / Manual) -->
+        <section>
+            <div class="card card-mode">
+                <div class="mode-info">
+                    <h3>System Controller Mode</h3>
+                    <p id="mode-desc">Manual control enabled. Appliances will respond directly to dashboard commands.</p>
+                </div>
+                <div class="switch-container">
+                    <input type="checkbox" id="toggle-mode" onchange="sendModeToggle()">
+                    <span class="slider"></span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Appliance Controls Section -->
+        <section>
+            <div class="section-title">Manual Controls</div>
+            
+            <!-- Warning message appearing when Auto mode disables manual switches -->
+            <div class="auto-mode-overlay-msg" id="auto-msg">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                Auto Mode is active. Manual toggles are disabled to let automation govern room energy saving.
+            </div>
+
+            <div class="controls-wrapper" id="controls-wrapper">
+                <div class="grid-controls">
+
+                    <!-- Light Appliance -->
+                    <div class="card card-control" id="card-light-relay">
+                        <div class="sensor-header">
+                            <div class="control-details">
+                                <h3>Room Light</h3>
+                                <div class="control-status" id="status-light">OFF</div>
+                            </div>
+                            <div class="sensor-icon">
+                                <!-- Lightbulb SVG -->
+                                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A5 5 0 0 0 8 8c0 1 .4 2.5 1.5 3.5.7.8 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
+                            </div>
+                        </div>
+                        <div class="control-action">
+                            <span>Power State</span>
+                            <div class="switch-container">
+                                <input type="checkbox" id="toggle-light" onchange="sendDeviceControl('light', this.checked)">
+                                <span class="slider"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Fan Appliance -->
+                    <div class="card card-control" id="card-fan-relay">
+                        <div class="sensor-header">
+                            <div class="control-details">
+                                <h3>Ventilation Fan</h3>
+                                <div class="control-status" id="status-fan">OFF</div>
+                            </div>
+                            <div class="sensor-icon">
+                                <!-- Fan SVG -->
+                                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v7"/><path d="M12 15v7"/><path d="M2 12h7"/><path d="M15 12h7"/></svg>
+                            </div>
+                        </div>
+                        <div class="control-action">
+                            <span>Power State</span>
+                            <div class="switch-container">
+                                <input type="checkbox" id="toggle-fan" onchange="sendDeviceControl('fan', this.checked)">
+                                <span class="slider"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- AC Appliance -->
+                    <div class="card card-control" id="card-ac-relay">
+                        <div class="sensor-header">
+                            <div class="control-details">
+                                <h3>Air Conditioner</h3>
+                                <div class="control-status" id="status-ac">OFF</div>
+                            </div>
+                            <div class="sensor-icon">
+                                <!-- AC/Snowflake SVG -->
+                                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/><path d="m20 16-4-4 4-4"/><path d="m4 8 4 4-4 4"/><path d="m16 4-4 4-4-4"/><path d="m8 20 4-4 4 4"/></svg>
+                            </div>
+                        </div>
+                        <div class="control-action">
+                            <span>Power State</span>
+                            <div class="switch-container">
+                                <input type="checkbox" id="toggle-ac" onchange="sendDeviceControl('ac', this.checked)">
+                                <span class="slider"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer>
+            Smart Room Controller © 2026 - Designed for High Performance ESP32 IoT Nodes
+        </footer>
+
+    </div>
+
+    <script>
+        // System States & WebSocket Settings
+        let gateway = `ws://${window.location.host}/ws`;
+        let websocket;
+        let isAutoMode = false;
+        let pollTimer = null;
+        let motionTimeoutTimer = null;
+        let lastMotionTime = null;
+
+        // On Load initialization
+        window.addEventListener('load', initDashboard);
+
+        function initDashboard() {
+            // Attempt to connect to WebSockets
+            initWebSocket();
+        }
+
+        // --- WEB SOCKET COMMUNICATION ---
+        function initWebSocket() {
+            console.log('Connecting to WebSocket...');
+            
+            // Handle local testing on file protocol
+            if (window.location.protocol === 'file:') {
+                console.warn('Dashboard running locally via file://. WebSocket unavailable. Switching to mock/simulated mode.');
+                updateBadge(false, "Simulated Mode");
+                startMockingData();
+                return;
+            }
+
+            websocket = new WebSocket(gateway);
+            websocket.onopen = onWSOpen;
+            websocket.onclose = onWSClose;
+            websocket.onmessage = onWSMessage;
+            websocket.onerror = onWSError;
+        }
+
+        function onWSOpen(event) {
+            console.log('WebSocket Connection Opened.');
+            updateBadge(true, "Connected");
+            
+            // If we had a polling timer, clear it
+            if (pollTimer) {
+                clearInterval(pollTimer);
+                pollTimer = null;
+            }
+        }
+
+        function onWSClose(event) {
+            console.warn('WebSocket connection lost. Attempting HTTP polling fallback...');
+            updateBadge(false, "Offline Polling");
+            
+            // Switch to HTTP REST Polling every 2.5 seconds
+            if (!pollTimer) {
+                pollDataHTTP();
+                pollTimer = setInterval(pollDataHTTP, 2500);
+            }
+
+            // Retry WebSocket connection after 8 seconds
+            setTimeout(initWebSocket, 8000);
+        }
+
+        function onWSError(event) {
+            console.error('WebSocket Error detected:', event);
+        }
+
+        function onWSMessage(event) {
+            console.log('WebSocket Message Received:', event.data);
+            try {
+                const data = JSON.parse(event.data);
+                updateUI(data);
+            } catch (err) {
+                console.error("Error parsing WebSocket JSON payload:", err);
+            }
+        }
+
+        // --- HTTP FALLBACK COMMUNICATION ---
+        function pollDataHTTP() {
+            fetch('/api/status')
+                .then(response => {
+                    if (!response.ok) throw new Error('HTTP Status response not ok');
+                    return response.json();
+                })
+                .then(data => {
+                    updateUI(data);
+                    updateBadge(false, "HTTP Mode");
+                })
+                .catch(err => {
+                    console.error("Error fetching REST API data:", err);
+                    updateBadge(false, "Offline / Error");
+                });
+        }
+
+        function sendHTTPControl(device, state) {
+            // Converts true/false to 1/0
+            const stateValue = state ? 1 : 0;
+            fetch(`/api/control?device=${device}&state=${stateValue}`)
+                .then(response => {
+                    if (!response.ok) throw new Error('HTTP Control response not ok');
+                    return response.json();
+                })
+                .then(data => {
+                    updateUI(data);
+                })
+                .catch(err => console.error("HTTP Control Send Failed:", err));
+        }
+
+        // Send HTTP mode toggle
+        function sendHTTPMode(autoMode) {
+            const modeStr = autoMode ? "auto" : "manual";
+            fetch(`/api/control?mode=${modeStr}`)
+                .then(response => {
+                    if (!response.ok) throw new Error('HTTP Mode response not ok');
+                    return response.json();
+                })
+                .then(data => {
+                    updateUI(data);
+                })
+                .catch(err => console.error("HTTP Mode Send Failed:", err));
+        }
+
+        // --- DYNAMIC CONTROL DISPATCHERS ---
+        function sendDeviceControl(device, state) {
+            console.log(`Command Device Control - ${device}: ${state}`);
+            if (websocket && websocket.readyState === WebSocket.OPEN) {
+                const msg = {
+                    action: "control",
+                    device: device,
+                    value: state ? 1 : 0
+                };
+                websocket.send(JSON.stringify(msg));
+            } else {
+                sendHTTPControl(device, state);
+            }
+        }
+
+        function sendModeToggle() {
+            const toggleElement = document.getElementById('toggle-mode');
+            const autoChecked = toggleElement.checked;
+            console.log(`Command System Mode Toggle: ${autoChecked ? 'AUTO' : 'MANUAL'}`);
+            
+            if (websocket && websocket.readyState === WebSocket.OPEN) {
+                const msg = {
+                    action: "mode",
+                    value: autoChecked ? "auto" : "manual"
+                };
+                websocket.send(JSON.stringify(msg));
+            } else {
+                sendHTTPMode(autoChecked);
+            }
+        }
+
+        // --- CORE UI RENDER ENGINE ---
+        function updateUI(data) {
+            // Update Sensor Values
+            if (data.temperature !== undefined) {
+                document.getElementById('val-temp').innerText = parseFloat(data.temperature).toFixed(1);
+                // Convert to Fahrenheit for footer
+                const tempF = (parseFloat(data.temperature) * 9/5) + 32;
+                document.getElementById('val-temp-f').innerText = tempF.toFixed(1);
+                
+                // Color Code Temperature Card
+                const cardTemp = document.getElementById('card-temp');
+                if (data.temperature > 28) {
+                    cardTemp.style.borderLeft = "4px solid var(--color-temp)";
+                } else if (data.temperature < 20) {
+                    cardTemp.style.borderLeft = "4px solid var(--color-humidity)";
+                } else {
+                    cardTemp.style.borderLeft = "none";
+                }
+            }
+
+            if (data.humidity !== undefined) {
+                document.getElementById('val-humidity').innerText = parseInt(data.humidity);
+                const humDesc = document.getElementById('val-humidity-desc');
+                if (data.humidity > 70) {
+                    humDesc.innerText = "High humidity (wet)";
+                    humDesc.style.color = "var(--color-humidity)";
+                } else if (data.humidity < 35) {
+                    humDesc.innerText = "Low humidity (dry)";
+                    humDesc.style.color = "var(--color-temp)";
+                } else {
+                    humDesc.innerText = "Comfortable humidity";
+                    humDesc.style.color = "var(--text-secondary)";
+                }
+            }
+
+            if (data.light !== undefined) {
+                document.getElementById('val-light').innerText = parseInt(data.light);
+                const lightLabel = document.getElementById('val-light-level');
+                if (data.light > 500) {
+                    lightLabel.innerText = "Brightly Lit Room";
+                } else if (data.light < 80) {
+                    lightLabel.innerText = "Dimly Lit Room";
+                } else {
+                    lightLabel.innerText = "Ambient Workspace";
+                }
+            }
+
+            // Update Motion Status
+            if (data.motion !== undefined) {
+                const motionCard = document.getElementById('card-motion');
+                const motionValEl = document.getElementById('val-motion');
+                const isMotionActive = (data.motion === 1 || data.motion === true || data.motion === "active");
+                
+                if (isMotionActive) {
+                    motionCard.classList.add('motion-detected');
+                    motionValEl.innerText = "MOTION ACTIVE";
+                    lastMotionTime = new Date();
+                    document.getElementById('val-motion-time').innerText = lastMotionTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'});
+                } else {
+                    motionCard.classList.remove('motion-detected');
+                    motionValEl.innerText = "NO MOTION";
+                }
+            }
+
+            // Update Mode (Auto/Manual)
+            if (data.mode !== undefined) {
+                isAutoMode = (data.mode === "auto" || data.mode === 1);
+                document.getElementById('toggle-mode').checked = isAutoMode;
+                
+                const modeDesc = document.getElementById('mode-desc');
+                const controlsWrapper = document.getElementById('controls-wrapper');
+                
+                if (isAutoMode) {
+                    modeDesc.innerText = "Auto Mode Active. ESP32 runs onboard automation sensors & relays to save energy.";
+                    controlsWrapper.classList.add('disabled');
+                } else {
+                    modeDesc.innerText = "Manual control enabled. Appliances will respond directly to dashboard commands.";
+                    controlsWrapper.classList.remove('disabled');
+                }
+            }
+
+            // Update Relays
+            if (data.light_relay !== undefined) {
+                const lightActive = (data.light_relay === 1 || data.light_relay === true);
+                document.getElementById('toggle-light').checked = lightActive;
+                document.getElementById('status-light').innerText = lightActive ? "ACTIVE / ON" : "INACTIVE / OFF";
+                
+                const card = document.getElementById('card-light-relay');
+                if (lightActive) card.classList.add('active-light');
+                else card.classList.remove('active-light');
+            }
+
+            if (data.fan_relay !== undefined) {
+                const fanActive = (data.fan_relay === 1 || data.fan_relay === true);
+                document.getElementById('toggle-fan').checked = fanActive;
+                document.getElementById('status-fan').innerText = fanActive ? "ACTIVE / ON" : "INACTIVE / OFF";
+                
+                const card = document.getElementById('card-fan-relay');
+                if (fanActive) card.classList.add('active-fan');
+                else card.classList.remove('active-fan');
+            }
+
+            if (data.ac_relay !== undefined) {
+                const acActive = (data.ac_relay === 1 || data.ac_relay === true);
+                document.getElementById('toggle-ac').checked = acActive;
+                document.getElementById('status-ac').innerText = acActive ? "ACTIVE / ON" : "INACTIVE / OFF";
+                
+                const card = document.getElementById('card-ac-relay');
+                if (acActive) card.classList.add('active-ac');
+                else card.classList.remove('active-ac');
+            }
+        }
+
+        // Connection badge state controller
+        function updateBadge(isConnected, customText) {
+            const badge = document.getElementById('connection-badge');
+            const text = document.getElementById('connection-text');
+            badge.className = "badge badge-ws " + (isConnected ? "connected" : "disconnected");
+            text.innerText = customText || (isConnected ? "Connected" : "Disconnected");
+        }
+
+        // --- SIMULATOR FOR LOCAL PREVIEWS (OFFLINE DEV) ---
+        let mockState = {
+            temperature: 24.5,
+            humidity: 48,
+            light: 250,
+            motion: 0,
+            mode: "manual",
+            light_relay: 0,
+            fan_relay: 0,
+            ac_relay: 0
+        };
+
+        function startMockingData() {
+            updateUI(mockState);
+            
+            // Regularly fluctuate sensor values to simulate real dashboard action
+            setInterval(() => {
+                mockState.temperature += (Math.random() - 0.5) * 0.3;
+                mockState.humidity += Math.floor((Math.random() - 0.5) * 2);
+                mockState.humidity = Math.max(20, Math.min(95, mockState.humidity));
+                mockState.light += Math.floor((Math.random() - 0.5) * 25);
+                mockState.light = Math.max(10, Math.min(800, mockState.light));
+                
+                // Randomly trigger simulated motion (10% chance)
+                if (Math.random() > 0.9) {
+                    mockState.motion = 1;
+                    setTimeout(() => {
+                        mockState.motion = 0;
+                        updateUI(mockState);
+                    }, 5000);
+                }
+                
+                // If Auto mode, simulate some automation decisions
+                if (mockState.mode === "auto") {
+                    if (mockState.temperature > 27) {
+                        mockState.ac_relay = 1;
+                        mockState.fan_relay = 1;
+                    } else if (mockState.temperature < 22) {
+                        mockState.ac_relay = 0;
+                        mockState.fan_relay = 0;
+                    }
+                    
+                    if (mockState.light < 100 && mockState.motion === 1) {
+                        mockState.light_relay = 1;
+                    } else if (mockState.motion === 0) {
+                        // Turn off light after a delay
+                        mockState.light_relay = 0;
+                    }
+                }
+
+                updateUI(mockState);
+            }, 3000);
+
+            // Re-bind the interface change functions for the simulation
+            window.sendDeviceControl = function(device, state) {
+                console.log(`[SIMULATOR] Controlled device '${device}' to: ${state}`);
+                mockState[device + "_relay"] = state ? 1 : 0;
+                updateUI(mockState);
+            };
+
+            window.sendModeToggle = function() {
+                const autoChecked = document.getElementById('toggle-mode').checked;
+                console.log(`[SIMULATOR] System mode set to: ${autoChecked ? 'AUTO' : 'MANUAL'}`);
+                mockState.mode = autoChecked ? "auto" : "manual";
+                updateUI(mockState);
+            };
+        }
+    </script>
+</body>
+</html>
