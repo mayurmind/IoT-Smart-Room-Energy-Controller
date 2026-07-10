@@ -20,20 +20,21 @@ const char* ap_password = "EnergySavingRoom"; // Must be at least 8 characters
 #define SIMULATE_HARDWARE 1
 
 // GPIO Pin Definitions (Only used if SIMULATE_HARDWARE is 0)
-#define PIR_PIN          13  // Input: PIR Motion Sensor
-#define LDR_PIN          32  // Analog Input: Light Dependent Resistor (ADC1_CH6)
-#define DHT_PIN          4   // Input: DHT11 or DHT22 Temperature/Humidity Sensor
+#define PIR_PIN 13
+#define LDR_PIN 32
+#define DHT_PIN 4
+#define LIGHT_RELAY_PIN 26
+#define FAN_RELAY_PIN 25
+#define AC_RELAY_PIN 27
+#define BUZZER_PIN 14
 
-#define LIGHT_RELAY_PIN  26  // Output: Room Light Relay
-#define FAN_RELAY_PIN    25  // Output: Ventilation Fan Relay
-#define AC_RELAY_PIN     27  // Output: Air Conditioner Relay
-#define BUZZER_PIN       14  // Output: Active High Buzzer
+pinMode(BUZZER_PIN, OUTPUT);
+digitalWrite(BUZZER_PIN, LOW);
 
 // Relay Logic Configuration
-#define RELAY_ON  LOW
+#define RELAY_ON LOW
 #define RELAY_OFF HIGH
 
-// Helper function for active-low relay control
 void setRelay(int pin, bool state) {
   digitalWrite(pin, state ? RELAY_ON : RELAY_OFF);
 }
