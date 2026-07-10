@@ -29,6 +29,17 @@ const char* ap_password = "EnergySavingRoom"; // Must be at least 8 characters
 #define AC_RELAY_PIN     27  // Output: Air Conditioner Relay
 #define BUZZER_PIN       14  // Output: Active High Buzzer
 
+// Relay Logic Configuration
+#define RELAY_ON  LOW
+#define RELAY_OFF HIGH
+
+// Helper function for active-low relay control
+void setRelay(int pin, bool state) {
+  #if !SIMULATE_HARDWARE
+    digitalWrite(pin, state ? RELAY_ON : RELAY_OFF);
+  #endif
+}
+
 // Sensor Library Selection: DHT sensor library by Adafruit is recommended
 #if !SIMULATE_HARDWARE
   #include <DHT.h>
@@ -1177,23 +1188,17 @@ void handleDeviceControl(String device, int value) {
   if (device == "light" && lightRelay != state) {
     lightRelay = state;
     changed = true;
-    #if !SIMULATE_HARDWARE
-      digitalWrite(LIGHT_RELAY_PIN, lightRelay ? LOW : HIGH);
-    #endif
+    setRelay(LIGHT_RELAY_PIN, lightRelay);
   }
   else if (device == "fan" && fanRelay != state) {
     fanRelay = state;
     changed = true;
-    #if !SIMULATE_HARDWARE
-      digitalWrite(FAN_RELAY_PIN, fanRelay ? LOW : HIGH);
-    #endif
+    setRelay(FAN_RELAY_PIN, fanRelay);
   }
   else if (device == "ac" && acRelay != state) {
     acRelay = state;
     changed = true;
-    #if !SIMULATE_HARDWARE
-      digitalWrite(AC_RELAY_PIN, acRelay ? LOW : HIGH);
-    #endif
+    setRelay(AC_RELAY_PIN, acRelay);
   }
 
   if (changed) {
@@ -1284,9 +1289,9 @@ void setup() {
     pinMode(BUZZER_PIN, OUTPUT);
     
     // Start with relays OFF (Active LOW relays are OFF when HIGH)
-    digitalWrite(LIGHT_RELAY_PIN, HIGH);
-    digitalWrite(FAN_RELAY_PIN, HIGH);
-    digitalWrite(AC_RELAY_PIN, HIGH);
+    setRelay(LIGHT_RELAY_PIN, false);
+    setRelay(FAN_RELAY_PIN, false);
+    setRelay(AC_RELAY_PIN, false);
     digitalWrite(BUZZER_PIN, LOW); // Start with buzzer OFF
     
     // Start DHT Sensor
@@ -1449,9 +1454,7 @@ void loop() {
         if (!fanRelay) {
           fanRelay = true;
           ruleTriggered = true;
-          #if !SIMULATE_HARDWARE
-            digitalWrite(FAN_RELAY_PIN, LOW); // ON (Active LOW)
-          #endif
+          setRelay(FAN_RELAY_PIN, true);
           Serial.println("[Autopilot] Temperature > 30C: Fan ON");
         }
       } 
@@ -1459,9 +1462,7 @@ void loop() {
         if (fanRelay) {
           fanRelay = false;
           ruleTriggered = true;
-          #if !SIMULATE_HARDWARE
-            digitalWrite(FAN_RELAY_PIN, HIGH); // OFF (Active LOW)
-          #endif
+          setRelay(FAN_RELAY_PIN, false);
           Serial.println("[Autopilot] Temperature <= 30C: Fan OFF");
         }
       }
@@ -1471,9 +1472,7 @@ void loop() {
         if (!acRelay) {
           acRelay = true;
           ruleTriggered = true;
-          #if !SIMULATE_HARDWARE
-            digitalWrite(AC_RELAY_PIN, LOW); // ON (Active LOW)
-          #endif
+          setRelay(AC_RELAY_PIN, true);
           Serial.println("[Autopilot] Temperature > 36C: AC ON");
         }
       } 
@@ -1481,9 +1480,7 @@ void loop() {
         if (acRelay) {
           acRelay = false;
           ruleTriggered = true;
-          #if !SIMULATE_HARDWARE
-            digitalWrite(AC_RELAY_PIN, HIGH); // OFF (Active LOW)
-          #endif
+          setRelay(AC_RELAY_PIN, false);
           Serial.println("[Autopilot] Temperature <= 36C: AC OFF");
         }
       }
@@ -1495,9 +1492,7 @@ void loop() {
         if (!lightRelay) {
           lightRelay = true;
           ruleTriggered = true;
-          #if !SIMULATE_HARDWARE
-            digitalWrite(LIGHT_RELAY_PIN, LOW); // ON (Active LOW)
-          #endif
+          setRelay(LIGHT_RELAY_PIN, true);
           Serial.println("[Autopilot] Room dark & motion active: Light ON");
         }
       } 
@@ -1505,9 +1500,7 @@ void loop() {
         if (lightRelay) {
           lightRelay = false;
           ruleTriggered = true;
-          #if !SIMULATE_HARDWARE
-            digitalWrite(LIGHT_RELAY_PIN, HIGH); // OFF (Active LOW)
-          #endif
+          setRelay(LIGHT_RELAY_PIN, false);
           Serial.println("[Autopilot] Conditions not met: Light OFF");
         }
       }
@@ -1519,10 +1512,8 @@ void loop() {
           fanRelay = false;
           acRelay = false;
           ruleTriggered = true;
-          #if !SIMULATE_HARDWARE
-            digitalWrite(FAN_RELAY_PIN, HIGH); // OFF (Active LOW)
-            digitalWrite(AC_RELAY_PIN, HIGH);  // OFF (Active LOW)
-          #endif
+          setRelay(FAN_RELAY_PIN, false);
+          setRelay(AC_RELAY_PIN, false);
           Serial.println("[Autopilot] Long unoccupied room timeout: AC and Fan Shutdown");
         }
       }
