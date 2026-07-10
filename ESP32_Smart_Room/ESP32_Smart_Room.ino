@@ -2,24 +2,14 @@
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
 
-// ==========================================
-// CONFIGURATION & SETUP
-// ==========================================
-
-// WiFi Settings: Replace with your credentials, or leave empty to default to Access Point Mode
 const char* ssid = "YOUR_WIFI_SSID";
 const char* password = "YOUR_WIFI_PASSWORD";
 
-// Fallback Access Point Settings (if SSID is empty or connection fails)
 const char* ap_ssid = "ESP32_Smart_Room";
-const char* ap_password = "EnergySavingRoom"; // Must be at least 8 characters
+const char* ap_password = "EnergySavingRoom";
 
-// Hardware Simulation Flag:
-// Set to 1 to run virtual sensors & relays (great for instant testing without wiring!).
-// Set to 0 to read/write real ESP32 GPIO pins.
-#define SIMULATE_HARDWARE 1
+#define SIMULATE_HARDWARE 0
 
-// GPIO Pin Definitions (Only used if SIMULATE_HARDWARE is 0)
 #define PIR_PIN 13
 #define LDR_PIN 32
 #define DHT_PIN 4
@@ -28,10 +18,6 @@ const char* ap_password = "EnergySavingRoom"; // Must be at least 8 characters
 #define AC_RELAY_PIN 27
 #define BUZZER_PIN 14
 
-pinMode(BUZZER_PIN, OUTPUT);
-digitalWrite(BUZZER_PIN, LOW);
-
-// Relay Logic Configuration
 #define RELAY_ON LOW
 #define RELAY_OFF HIGH
 
@@ -39,16 +25,12 @@ void setRelay(int pin, bool state) {
   digitalWrite(pin, state ? RELAY_ON : RELAY_OFF);
 }
 
-// Sensor Library Selection: DHT sensor library by Adafruit is recommended
 #if !SIMULATE_HARDWARE
   #include <DHT.h>
-  #define DHTTYPE DHT22  // DHT 11 or DHT 22
+  #define DHTTYPE DHT22
   DHT dht(DHT_PIN, DHTTYPE);
 #endif
 
-// ==========================================
-// SYSTEM STATE VARIABLES
-// ==========================================
 float temperature = 24.5;
 int humidity = 48;
 int lightValue = 250;
@@ -57,26 +39,16 @@ bool motionActive = false;
 bool lightRelay = false;
 bool fanRelay = false;
 bool acRelay = false;
-
-// Mode: true = Auto Mode (ESP32 automates appliances), false = Manual Mode (user clicks buttons)
 bool autoMode = false;
 
-// Automation parameters
 unsigned long lastMotionTriggerTime = 0;
-const unsigned long motionTimeoutMs = 15000; // 15 seconds motion timeout (for testing/demo)
-
-// Timers
+const unsigned long motionTimeoutMs = 15000;
 unsigned long lastSensorRead = 0;
-const unsigned long sensorInterval = 2000; // Read sensors and broadcast every 2 seconds
+const unsigned long sensorInterval = 2000;
 
-// Web Server & WebSockets
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
 
-// ==========================================
-// EMBEDDED DASHBOARD HTML (index.html)
-// ==========================================
-// The HTML is stored in flash memory as a PROGMEM string literal.
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html lang="en">
@@ -1152,14 +1124,8 @@ const char index_html[] PROGMEM = R"rawliteral(
 </html>
 )rawliteral";
 
-// ==========================================
-// UTILITY FUNCTIONS & EVENT HANDLERS
-// ==========================================
-
-// Build the system status JSON string
 String getStatusJSON() {
   StaticJsonDocument<256> doc;
-  
   doc["temperature"] = temperature;
   doc["humidity"] = humidity;
   doc["light"] = lightValue;
@@ -1168,45 +1134,21 @@ String getStatusJSON() {
   doc["light_relay"] = lightRelay ? 1 : 0;
   doc["fan_relay"] = fanRelay ? 1 : 0;
   doc["ac_relay"] = acRelay ? 1 : 0;
-  
   String output;
   serializeJson(doc, output);
   return output;
 }
 
-// Notify all connected WebSocket clients of a state change
-void notifyClients() {
-  ws.textAll(getStatusJSON());
-}
+void notifyClients() { ws.textAll(getStatusJSON()); }
 
-// Handle incoming control request (both WebSocket and REST fallback)
 void handleDeviceControl(String device, int value) {
   bool state = (value == 1);
-  bool changed = false;
-
-  if (device == "light" && lightRelay != state) {
-    lightRelay = state;
-    changed = true;
-    setRelay(LIGHT_RELAY_PIN, lightRelay);
-  }
-  else if (device == "fan" && fanRelay != state) {
-    fanRelay = state;
-    changed = true;
-    setRelay(FAN_RELAY_PIN, fanRelay);
-  }
-  else if (device == "ac" && acRelay != state) {
-    acRelay = state;
-    changed = true;
-    setRelay(AC_RELAY_PIN, acRelay);
-  }
-
-  if (changed) {
-    Serial.printf("Device %s set to %s\n", device.c_str(), state ? "ON" : "OFF");
-    notifyClients();
-  }
+  if (device == "light") { lightRelay = state; setRelay(LIGHT_RELAY_PIN, lightRelay); }
+  else if (device == "fan") { fanRelay = state; setRelay(FAN_RELAY_PIN, fanRelay); }
+  else if (device == "ac") { acRelay = state; setRelay(AC_RELAY_PIN, acRelay); }
+  notifyClients();
 }
 
-// Handle mode switch (Auto/Manual)
 void handleModeChange(String mode) {
   bool newAutoMode = (mode == "auto");
   if (autoMode != newAutoMode) {
@@ -1216,28 +1158,19 @@ void handleModeChange(String mode) {
   }
 }
 
-// Process WebSocket data events
 void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
   AwsFrameInfo *info = (AwsFrameInfo*)arg;
   if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
     data[len] = 0;
     String message = (char*)data;
-    Serial.print("WS Received: ");
-    Serial.println(message);
-
     StaticJsonDocument<256> doc;
     DeserializationError error = deserializeJson(doc, message);
-    if (error) {
-      Serial.print("deserializeJson() failed: ");
-      Serial.println(error.c_str());
-      return;
-    }
+    if (error) return;
 
     String action = doc["action"] | "";
     if (action == "control") {
       String device = doc["device"] | "";
       int value = doc["value"] | 0;
-      // Controls are ignored in Auto Mode to preserve system override protection
       if (!autoMode) {
         handleDeviceControl(device, value);
       }
@@ -1249,17 +1182,13 @@ void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
   }
 }
 
-// WebSocket Event Listener
 void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type,
              void *arg, uint8_t *data, size_t len) {
   switch (type) {
     case WS_EVT_CONNECT:
-      Serial.printf("WebSocket client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
-      // Send initial status on connection
       client->text(getStatusJSON());
       break;
     case WS_EVT_DISCONNECT:
-      Serial.printf("WebSocket client #%u disconnected\n", client->id());
       break;
     case WS_EVT_DATA:
       handleWebSocketMessage(arg, data, len);
@@ -1270,263 +1199,142 @@ void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType 
   }
 }
 
-// ==========================================
-// ARDUINO CORE HOOKS
-// ==========================================
-
 void setup() {
   Serial.begin(115200);
   delay(1000);
-  Serial.println("\nInitializing Smart Room Controller...");
 
-  // Initialize GPIO Pins
   pinMode(PIR_PIN, INPUT);
   pinMode(LIGHT_RELAY_PIN, OUTPUT);
   pinMode(FAN_RELAY_PIN, OUTPUT);
   pinMode(AC_RELAY_PIN, OUTPUT);
   pinMode(BUZZER_PIN, OUTPUT);
-  
-  // Start with relays OFF (Active LOW relays are OFF when HIGH)
+
+  digitalWrite(BUZZER_PIN, LOW);
   setRelay(LIGHT_RELAY_PIN, false);
   setRelay(FAN_RELAY_PIN, false);
   setRelay(AC_RELAY_PIN, false);
-  digitalWrite(BUZZER_PIN, LOW); // Start with buzzer OFF
-  
+
   #if !SIMULATE_HARDWARE
-    // Start DHT Sensor
     dht.begin();
   #endif
 
-  // WiFi Setup (Station or AP fallback)
   if (strlen(ssid) > 0 && strcmp(ssid, "YOUR_WIFI_SSID") != 0) {
     WiFi.begin(ssid, password);
-    Serial.printf("Connecting to WiFi: %s ", ssid);
     int attempts = 0;
     while (WiFi.status() != WL_CONNECTED && attempts < 15) {
       delay(500);
-      Serial.print(".");
       attempts++;
     }
-    
-    if (WiFi.status() == WL_CONNECTED) {
-      Serial.println("\nWiFi Connected!");
-      Serial.print("IP Address: ");
-      Serial.println(WiFi.localIP());
-    } else {
-      Serial.println("\nWiFi Connection failed. Activating AP Mode fallback...");
-    }
   }
 
-  // AP Mode configuration (if credentials fail or are not supplied)
   if (WiFi.status() != WL_CONNECTED) {
     WiFi.softAP(ap_ssid, ap_password);
-    Serial.println("Access Point Started.");
-    Serial.print("AP IP Address: ");
-    Serial.println(WiFi.softAPIP());
-    Serial.printf("Connect to SSID '%s' with password '%s' to access dashboard.\n", ap_ssid, ap_password);
   }
 
-  // Initialize WebSocket handler
   ws.onEvent(onEvent);
   server.addHandler(&ws);
 
-  // Configure REST Web Server Routes
-  
-  // 1. Server Home Page (Serve HTML from flash)
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send_P(200, "text/html", index_html);
   });
 
-  // 2. API Status Endpoint (REST fallback)
   server.on("/api/status", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send(200, "application/json", getStatusJSON());
   });
 
-  // 3. API Control Endpoint (REST fallback)
   server.on("/api/control", HTTP_GET, [](AsyncWebServerRequest *request){
     bool commandHandled = false;
-    
-    // Check if mode is being changed
     if (request->hasParam("mode")) {
       String mode = request->getParam("mode")->value();
       handleModeChange(mode);
       commandHandled = true;
     }
-    
-    // Check if device state is being changed (only allowed in manual mode)
     if (!autoMode && request->hasParam("device") && request->hasParam("state")) {
       String device = request->getParam("device")->value();
       int state = request->getParam("state")->value().toInt();
       handleDeviceControl(device, state);
       commandHandled = true;
     }
-    
     if (commandHandled) {
       request->send(200, "application/json", getStatusJSON());
     } else {
-      request->send(400, "application/json", "{\"error\":\"Invalid arguments or manual control locked in Auto mode\"}");
+      request->send(400, "application/json", "{\"error\":\"Invalid arguments or auto mode active\"}");
     }
   });
 
-  // Start Asynchronous Web Server
   server.begin();
-  Serial.println("HTTP and WebSocket Server is Running.");
+  Serial.println("System Initialized with Final Pinout.");
 }
 
 void loop() {
   unsigned long currentMillis = millis();
-
-  // Clean up disconnected WebSocket clients periodically
   ws.cleanupClients();
 
-  // Read Sensors & Update states
   if (currentMillis - lastSensorRead >= sensorInterval) {
     lastSensorRead = currentMillis;
 
-    // --- SENSOR READING & SIMULATION ENGINE ---
     #if SIMULATE_HARDWARE
-      // Fluctuate values to simulate a dynamic environment
       temperature += random(-2, 3) * 0.1;
       temperature = constrain(temperature, 15.0, 35.0);
-      
       humidity += random(-2, 3);
       humidity = constrain(humidity, 30, 90);
-      
       lightValue += random(-20, 21);
       lightValue = constrain(lightValue, 50, 750);
 
-      // 10% chance to simulate motion detection if currently inactive
       if (!motionActive && random(0, 100) < 10) {
         motionActive = true;
         lastMotionTriggerTime = currentMillis;
-        Serial.println("[Simulated Sensor] PIR Motion Triggered!");
-        Serial.println("[Simulated Output] Buzzer BEEP!");
         digitalWrite(BUZZER_PIN, HIGH);
         delay(100);
         digitalWrite(BUZZER_PIN, LOW);
       } 
-      // If motion is active, turn off after motionTimeoutMs
       else if (motionActive && (currentMillis - lastMotionTriggerTime >= motionTimeoutMs)) {
         motionActive = false;
-        Serial.println("[Simulated Sensor] PIR Motion Timeout. No activity.");
       }
     #else
-      // Actual sensor readings
       float t = dht.readTemperature();
       float h = dht.readHumidity();
-      int l = analogRead(LDR_PIN); // Reads 0 to 4095 on ESP32 ADC
-      // Convert raw LDR to a simplified Lux approximation for the dashboard
-      int lux = map(l, 4095, 0, 10, 1000); 
+      int l = analogRead(LDR_PIN);
+      int lux = map(l, 4095, 0, 10, 1000);
       bool motion = (digitalRead(PIR_PIN) == HIGH);
 
-      bool dataChanged = false;
-
-      if (!isnan(t)) {
-        temperature = t;
-      }
-      if (!isnan(h)) {
-        humidity = h;
-      }
+      if (!isnan(t)) temperature = t;
+      if (!isnan(h)) humidity = h;
       lightValue = lux;
-      
+
       if (motion != motionActive) {
         motionActive = motion;
         if (motionActive) {
           lastMotionTriggerTime = currentMillis;
-          Serial.println("[Sensor PIR] Motion Detected!");
-          // Beep buzzer
           digitalWrite(BUZZER_PIN, HIGH);
           delay(100);
           digitalWrite(BUZZER_PIN, LOW);
-        } else {
-          Serial.println("[Sensor PIR] Motion Clear.");
         }
       }
     #endif
 
-    // --- AUTOPILOT SMART ENERGY SAVER RULES ---
     if (autoMode) {
-      bool ruleTriggered = false;
+      fanRelay = (temperature > 30.0);
+      acRelay = (temperature > 36.0);
+      setRelay(FAN_RELAY_PIN, fanRelay);
+      setRelay(AC_RELAY_PIN, acRelay);
 
-      // Rule 1: Comfort Cooling (Air Conditioner & Fan Control)
-      // Fan Control: ON if Temp > 30°C, else OFF.
-      if (temperature > 30.0) {
-        if (!fanRelay) {
-          fanRelay = true;
-          ruleTriggered = true;
-          setRelay(FAN_RELAY_PIN, true);
-          Serial.println("[Autopilot] Temperature > 30C: Fan ON");
-        }
-      } 
-      else {
-        if (fanRelay) {
-          fanRelay = false;
-          ruleTriggered = true;
-          setRelay(FAN_RELAY_PIN, false);
-          Serial.println("[Autopilot] Temperature <= 30C: Fan OFF");
-        }
-      }
+      lightRelay = (motionActive && lightValue < 1000);
+      setRelay(LIGHT_RELAY_PIN, lightRelay);
 
-      // AC Control: ON if Temp > 36°C, else OFF.
-      if (temperature > 36.0) {
-        if (!acRelay) {
-          acRelay = true;
-          ruleTriggered = true;
-          setRelay(AC_RELAY_PIN, true);
-          Serial.println("[Autopilot] Temperature > 36C: AC ON");
-        }
-      } 
-      else {
-        if (acRelay) {
-          acRelay = false;
-          ruleTriggered = true;
-          setRelay(AC_RELAY_PIN, false);
-          Serial.println("[Autopilot] Temperature <= 36C: AC OFF");
-        }
-      }
-
-      // Rule 2: Smart Lighting Control
-      // Turn lights ON if there is motion and ambient light level < 1000 lux.
-      // Turn lights OFF otherwise.
-      if (motionActive && lightValue < 1000) {
-        if (!lightRelay) {
-          lightRelay = true;
-          ruleTriggered = true;
-          setRelay(LIGHT_RELAY_PIN, true);
-          Serial.println("[Autopilot] Room dark & motion active: Light ON");
-        }
-      } 
-      else {
-        if (lightRelay) {
-          lightRelay = false;
-          ruleTriggered = true;
-          setRelay(LIGHT_RELAY_PIN, false);
-          Serial.println("[Autopilot] Conditions not met: Light OFF");
-        }
-      }
-
-      // Rule 3: Empty Room Auto Shutdown
-      // If no motion is detected for a long duration, shut down everything (Fan & AC) to save power.
       if (!motionActive && (currentMillis - lastMotionTriggerTime >= motionTimeoutMs)) {
-        if (fanRelay || acRelay) {
-          fanRelay = false;
-          acRelay = false;
-          ruleTriggered = true;
-          setRelay(FAN_RELAY_PIN, false);
-          setRelay(AC_RELAY_PIN, false);
-          Serial.println("[Autopilot] Long unoccupied room timeout: AC and Fan Shutdown");
-        }
+        fanRelay = false; acRelay = false;
+        setRelay(FAN_RELAY_PIN, false);
+        setRelay(AC_RELAY_PIN, false);
       }
     }
 
-    // Print status in serial monitor
     String lightStatusStr = (lightRelay) ? "ON" : "OFF";
     String fanStatusStr = (fanRelay) ? "ON" : "OFF";
     String acStatusStr = (acRelay) ? "ON" : "OFF";
     Serial.printf("Temp: %.1fC | Hum: %d%% | Light: %d | Motion: %d | LightRelay: %s | FanRelay: %s | ACRelay: %s\n", 
                   temperature, humidity, lightValue, motionActive ? 1 : 0, lightStatusStr.c_str(), fanStatusStr.c_str(), acStatusStr.c_str());
 
-    // Broadcast updated state to all connected web interfaces
     notifyClients();
   }
 }
