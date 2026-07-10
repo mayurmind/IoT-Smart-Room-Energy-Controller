@@ -35,9 +35,7 @@ const char* ap_password = "EnergySavingRoom"; // Must be at least 8 characters
 
 // Helper function for active-low relay control
 void setRelay(int pin, bool state) {
-  #if !SIMULATE_HARDWARE
-    digitalWrite(pin, state ? RELAY_ON : RELAY_OFF);
-  #endif
+  digitalWrite(pin, state ? RELAY_ON : RELAY_OFF);
 }
 
 // Sensor Library Selection: DHT sensor library by Adafruit is recommended
@@ -1281,19 +1279,19 @@ void setup() {
   Serial.println("\nInitializing Smart Room Controller...");
 
   // Initialize GPIO Pins
+  pinMode(PIR_PIN, INPUT);
+  pinMode(LIGHT_RELAY_PIN, OUTPUT);
+  pinMode(FAN_RELAY_PIN, OUTPUT);
+  pinMode(AC_RELAY_PIN, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+  
+  // Start with relays OFF (Active LOW relays are OFF when HIGH)
+  setRelay(LIGHT_RELAY_PIN, false);
+  setRelay(FAN_RELAY_PIN, false);
+  setRelay(AC_RELAY_PIN, false);
+  digitalWrite(BUZZER_PIN, LOW); // Start with buzzer OFF
+  
   #if !SIMULATE_HARDWARE
-    pinMode(PIR_PIN, INPUT);
-    pinMode(LIGHT_RELAY_PIN, OUTPUT);
-    pinMode(FAN_RELAY_PIN, OUTPUT);
-    pinMode(AC_RELAY_PIN, OUTPUT);
-    pinMode(BUZZER_PIN, OUTPUT);
-    
-    // Start with relays OFF (Active LOW relays are OFF when HIGH)
-    setRelay(LIGHT_RELAY_PIN, false);
-    setRelay(FAN_RELAY_PIN, false);
-    setRelay(AC_RELAY_PIN, false);
-    digitalWrite(BUZZER_PIN, LOW); // Start with buzzer OFF
-    
     // Start DHT Sensor
     dht.begin();
   #endif
@@ -1402,6 +1400,9 @@ void loop() {
         lastMotionTriggerTime = currentMillis;
         Serial.println("[Simulated Sensor] PIR Motion Triggered!");
         Serial.println("[Simulated Output] Buzzer BEEP!");
+        digitalWrite(BUZZER_PIN, HIGH);
+        delay(100);
+        digitalWrite(BUZZER_PIN, LOW);
       } 
       // If motion is active, turn off after motionTimeoutMs
       else if (motionActive && (currentMillis - lastMotionTriggerTime >= motionTimeoutMs)) {
@@ -1433,11 +1434,9 @@ void loop() {
           lastMotionTriggerTime = currentMillis;
           Serial.println("[Sensor PIR] Motion Detected!");
           // Beep buzzer
-          #if !SIMULATE_HARDWARE
-            digitalWrite(BUZZER_PIN, HIGH);
-            delay(100);
-            digitalWrite(BUZZER_PIN, LOW);
-          #endif
+          digitalWrite(BUZZER_PIN, HIGH);
+          delay(100);
+          digitalWrite(BUZZER_PIN, LOW);
         } else {
           Serial.println("[Sensor PIR] Motion Clear.");
         }
