@@ -21,12 +21,13 @@ const char* ap_password = "EnergySavingRoom"; // Must be at least 8 characters
 
 // GPIO Pin Definitions (Only used if SIMULATE_HARDWARE is 0)
 #define PIR_PIN          13  // Input: PIR Motion Sensor
-#define LDR_PIN          34  // Analog Input: Light Dependent Resistor (ADC1_CH6)
+#define LDR_PIN          32  // Analog Input: Light Dependent Resistor (ADC1_CH6)
 #define DHT_PIN          4   // Input: DHT11 or DHT22 Temperature/Humidity Sensor
 
-#define LIGHT_RELAY_PIN  25  // Output: Room Light Relay
-#define FAN_RELAY_PIN    26  // Output: Ventilation Fan Relay
+#define LIGHT_RELAY_PIN  26  // Output: Room Light Relay
+#define FAN_RELAY_PIN    25  // Output: Ventilation Fan Relay
 #define AC_RELAY_PIN     27  // Output: Air Conditioner Relay
+#define BUZZER_PIN       14  // Output: Active High Buzzer
 
 // Sensor Library Selection: DHT sensor library by Adafruit is recommended
 #if !SIMULATE_HARDWARE
@@ -1177,21 +1178,21 @@ void handleDeviceControl(String device, int value) {
     lightRelay = state;
     changed = true;
     #if !SIMULATE_HARDWARE
-      digitalWrite(LIGHT_RELAY_PIN, lightRelay ? HIGH : LOW);
+      digitalWrite(LIGHT_RELAY_PIN, lightRelay ? LOW : HIGH);
     #endif
   }
   else if (device == "fan" && fanRelay != state) {
     fanRelay = state;
     changed = true;
     #if !SIMULATE_HARDWARE
-      digitalWrite(FAN_RELAY_PIN, fanRelay ? HIGH : LOW);
+      digitalWrite(FAN_RELAY_PIN, fanRelay ? LOW : HIGH);
     #endif
   }
   else if (device == "ac" && acRelay != state) {
     acRelay = state;
     changed = true;
     #if !SIMULATE_HARDWARE
-      digitalWrite(AC_RELAY_PIN, acRelay ? HIGH : LOW);
+      digitalWrite(AC_RELAY_PIN, acRelay ? LOW : HIGH);
     #endif
   }
 
@@ -1280,11 +1281,13 @@ void setup() {
     pinMode(LIGHT_RELAY_PIN, OUTPUT);
     pinMode(FAN_RELAY_PIN, OUTPUT);
     pinMode(AC_RELAY_PIN, OUTPUT);
+    pinMode(BUZZER_PIN, OUTPUT);
     
-    // Start with relays OFF
-    digitalWrite(LIGHT_RELAY_PIN, LOW);
-    digitalWrite(FAN_RELAY_PIN, LOW);
-    digitalWrite(AC_RELAY_PIN, LOW);
+    // Start with relays OFF (Active LOW relays are OFF when HIGH)
+    digitalWrite(LIGHT_RELAY_PIN, HIGH);
+    digitalWrite(FAN_RELAY_PIN, HIGH);
+    digitalWrite(AC_RELAY_PIN, HIGH);
+    digitalWrite(BUZZER_PIN, LOW); // Start with buzzer OFF
     
     // Start DHT Sensor
     dht.begin();
@@ -1393,6 +1396,7 @@ void loop() {
         motionActive = true;
         lastMotionTriggerTime = currentMillis;
         Serial.println("[Simulated Sensor] PIR Motion Triggered!");
+        Serial.println("[Simulated Output] Buzzer BEEP!");
       } 
       // If motion is active, turn off after motionTimeoutMs
       else if (motionActive && (currentMillis - lastMotionTriggerTime >= motionTimeoutMs)) {
@@ -1423,6 +1427,12 @@ void loop() {
         if (motionActive) {
           lastMotionTriggerTime = currentMillis;
           Serial.println("[Sensor PIR] Motion Detected!");
+          // Beep buzzer
+          #if !SIMULATE_HARDWARE
+            digitalWrite(BUZZER_PIN, HIGH);
+            delay(100);
+            digitalWrite(BUZZER_PIN, LOW);
+          #endif
         } else {
           Serial.println("[Sensor PIR] Motion Clear.");
         }
@@ -1434,56 +1444,71 @@ void loop() {
       bool ruleTriggered = false;
 
       // Rule 1: Comfort Cooling (Air Conditioner & Fan Control)
-      // If Temperature rises above 27°C, activate AC & Fan. If it drops below 23°C, turn them off to save power.
-      if (temperature > 27.0) {
-        if (!acRelay || !fanRelay) {
-          acRelay = true;
+      // Fan Control: ON if Temp > 30°C, else OFF.
+      if (temperature > 30.0) {
+        if (!fanRelay) {
           fanRelay = true;
           ruleTriggered = true;
           #if !SIMULATE_HARDWARE
-            digitalWrite(AC_RELAY_PIN, HIGH);
-            digitalWrite(FAN_RELAY_PIN, HIGH);
+            digitalWrite(FAN_RELAY_PIN, LOW); // ON (Active LOW)
           #endif
-          Serial.println("[Autopilot] Cooling Triggered: AC ON, Fan ON");
+          Serial.println("[Autopilot] Temperature > 30C: Fan ON");
         }
       } 
-      else if (temperature < 23.0) {
-        if (acRelay || fanRelay) {
-          acRelay = false;
+      else {
+        if (fanRelay) {
           fanRelay = false;
           ruleTriggered = true;
           #if !SIMULATE_HARDWARE
-            digitalWrite(AC_RELAY_PIN, LOW);
-            digitalWrite(FAN_RELAY_PIN, LOW);
+            digitalWrite(FAN_RELAY_PIN, HIGH); // OFF (Active LOW)
           #endif
-          Serial.println("[Autopilot] Temperature comfortable: AC OFF, Fan OFF");
+          Serial.println("[Autopilot] Temperature <= 30C: Fan OFF");
+        }
+      }
+
+      // AC Control: ON if Temp > 36°C, else OFF.
+      if (temperature > 36.0) {
+        if (!acRelay) {
+          acRelay = true;
+          ruleTriggered = true;
+          #if !SIMULATE_HARDWARE
+            digitalWrite(AC_RELAY_PIN, LOW); // ON (Active LOW)
+          #endif
+          Serial.println("[Autopilot] Temperature > 36C: AC ON");
+        }
+      } 
+      else {
+        if (acRelay) {
+          acRelay = false;
+          ruleTriggered = true;
+          #if !SIMULATE_HARDWARE
+            digitalWrite(AC_RELAY_PIN, HIGH); // OFF (Active LOW)
+          #endif
+          Serial.println("[Autopilot] Temperature <= 36C: AC OFF");
         }
       }
 
       // Rule 2: Smart Lighting Control
-      // Turn lights ON if there is motion and the ambient light level is dark (LDR < 120 lux).
-      // Turn lights OFF if motion has timed out.
-      if (motionActive) {
-        if (lightValue < 120) {
-          if (!lightRelay) {
-            lightRelay = true;
-            ruleTriggered = true;
-            #if !SIMULATE_HARDWARE
-              digitalWrite(LIGHT_RELAY_PIN, HIGH);
-            #endif
-            Serial.println("[Autopilot] Room dark & motion active: Light ON");
-          }
+      // Turn lights ON if there is motion and ambient light level < 1000 lux.
+      // Turn lights OFF otherwise.
+      if (motionActive && lightValue < 1000) {
+        if (!lightRelay) {
+          lightRelay = true;
+          ruleTriggered = true;
+          #if !SIMULATE_HARDWARE
+            digitalWrite(LIGHT_RELAY_PIN, LOW); // ON (Active LOW)
+          #endif
+          Serial.println("[Autopilot] Room dark & motion active: Light ON");
         }
       } 
       else {
-        // Motion cleared: Turn off lighting to prevent waste
         if (lightRelay) {
           lightRelay = false;
           ruleTriggered = true;
           #if !SIMULATE_HARDWARE
-            digitalWrite(LIGHT_RELAY_PIN, LOW);
+            digitalWrite(LIGHT_RELAY_PIN, HIGH); // OFF (Active LOW)
           #endif
-          Serial.println("[Autopilot] No motion detected: Light OFF");
+          Serial.println("[Autopilot] Conditions not met: Light OFF");
         }
       }
 
@@ -1495,13 +1520,20 @@ void loop() {
           acRelay = false;
           ruleTriggered = true;
           #if !SIMULATE_HARDWARE
-            digitalWrite(FAN_RELAY_PIN, LOW);
-            digitalWrite(AC_RELAY_PIN, LOW);
+            digitalWrite(FAN_RELAY_PIN, HIGH); // OFF (Active LOW)
+            digitalWrite(AC_RELAY_PIN, HIGH);  // OFF (Active LOW)
           #endif
           Serial.println("[Autopilot] Long unoccupied room timeout: AC and Fan Shutdown");
         }
       }
     }
+
+    // Print status in serial monitor
+    String lightStatusStr = (lightRelay) ? "ON" : "OFF";
+    String fanStatusStr = (fanRelay) ? "ON" : "OFF";
+    String acStatusStr = (acRelay) ? "ON" : "OFF";
+    Serial.printf("Temp: %.1fC | Hum: %d%% | Light: %d | Motion: %d | LightRelay: %s | FanRelay: %s | ACRelay: %s\n", 
+                  temperature, humidity, lightValue, motionActive ? 1 : 0, lightStatusStr.c_str(), fanStatusStr.c_str(), acStatusStr.c_str());
 
     // Broadcast updated state to all connected web interfaces
     notifyClients();
